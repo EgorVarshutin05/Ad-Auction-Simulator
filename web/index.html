@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ad Auction — тестирование аукциона</title>
+  <style>{{.Styles}}</style>
+</head>
+<body>
+  <main class="layout">
+    <header class="topbar">
+      <div class="brand"><div class="logo">A</div><div><strong>Ad Auction</strong><small>Тестовая панель рекламного аукциона</small></div></div>
+      <div class="status" id="status"><span class="dot"></span><span id="status-text">Проверка соединения...</span></div>
+    </header>
+
+    <div class="intro"><div><p class="eyebrow">PLAYGROUND / GO BACKEND</p><h1>Управление аукционом</h1><p>Отправляй ставки и наблюдай, как меняются победитель и статистика.</p></div><button class="btn secondary" id="refresh" type="button">↻ Обновить данные</button></div>
+
+    <div class="grid">
+      <section class="panel bid-panel">
+        <div class="panel-head"><div><h2>Новая ставка</h2><p>POST /bid</p></div><span class="tag">JSON</span></div>
+        <form id="bid-form">
+          <label for="advertiser">Рекламодатель</label>
+          <input id="advertiser" name="advertiser" type="text" maxlength="100" placeholder="Например, A" value="A" required>
+          <div class="two-col"><div><label for="bid">Ставка</label><input id="bid" name="bid" type="number" min="0.000001" step="any" value="150" required></div><div><label for="ctr">Предсказанный CTR</label><input id="ctr" name="ctr" type="number" min="0.000001" max="1" step="any" value="0.05" required></div></div>
+          <div class="calculation"><div><span>Эффективная ставка</span><strong id="effective">7.50</strong></div><small>Ставка × CTR</small></div>
+          <button class="btn primary" type="submit" id="send">Отправить ставку <span>→</span></button>
+        </form>
+        <div class="samples"><span>Быстрые примеры:</span><button class="chip" data-sample="A" type="button">A · 150 · 0.05</button><button class="chip" data-sample="B" type="button">B · 100 · 0.10</button><button class="chip" data-sample="C" type="button">C · 180 · 0.03</button></div>
+        <div class="feedback" id="feedback" role="status" aria-live="polite">Заполни поля и отправь первую ставку.</div>
+      </section>
+
+      <section class="panel winner-panel"><div class="panel-head"><div><h2>Текущий победитель</h2><p>GET /winner</p></div><span class="tag blue">LIVE</span></div><div id="winner-content" class="empty">Победитель появится после первой ставки.</div></section>
+
+      <section class="panel stats-panel"><div class="panel-head"><div><h2>Статистика</h2><p>GET /stats · обновляется асинхронно</p></div></div><div class="stat-total"><span>Всего обработано ставок</span><strong id="total-bids">—</strong></div><h3>Число побед по рекламодателям</h3><div id="wins" class="empty compact">Пока нет данных</div></section>
+
+      <section class="panel activity-panel"><div class="panel-head"><div><h2>Журнал запросов</h2><p>Последние действия из этой вкладки</p></div><button id="clear-log" class="text-btn" type="button">Очистить</button></div><div id="activity" class="activity-list"><div class="empty compact">Отправь ставку для начала тестирования.</div></div></section>
+    </div>
+    <footer><span>Учебный проект · Go + Redis + Prometheus</span><div><a href="/metrics" target="_blank" rel="noopener">Метрики Prometheus ↗</a><a href="http://localhost:6060/debug/pprof/" target="_blank" rel="noopener">pprof ↗</a></div></footer>
+  </main>
+  <script>{{.Script}}</script>
+</body>
+</html>
