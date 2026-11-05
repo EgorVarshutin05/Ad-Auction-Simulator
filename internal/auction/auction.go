@@ -3,7 +3,6 @@ package auction
 import (
 	"errors"
 	"math"
-	"sort"
 )
 
 type Bid struct {
@@ -50,31 +49,48 @@ func Calculate(bids []Bid, auctionType string) (Result, error) {
 		return Result{}, errors.New("no bids")
 	}
 
-	ordered := append([]Bid(nil), bids...)
-	for _, b := range ordered {
-		if err := Validate(b); err != nil {
+	bestIdx, secondIdx := -1, -1
+	var bestScore, secondScore float64
+
+	for i, bid := range bids {
+		if err := Validate(bid); err != nil {
 			return Result{}, err
+		}
+
+		score := bid.Amount * bid.PredictedCTR
+
+		if bestIdx == -1 ||
+			score > bestScore ||
+			(score == bestScore && bid.AdvertiserID < bids[bestIdx].AdvertiserID) {
+
+			secondIdx, secondScore = bestIdx, bestScore
+			bestIdx, bestScore = i, score
+
+		} else if secondIdx == -1 ||
+			score > secondScore ||
+			(score == secondScore && bid.AdvertiserID < bids[secondIdx].AdvertiserID) {
+
+			secondIdx, secondScore = i, score
 		}
 	}
 
-	sort.Slice(ordered, func(i, j int) bool {
-		left := ordered[i].Amount * ordered[i].PredictedCTR
-		right := ordered[j].Amount * ordered[j].PredictedCTR
-		if left == right {
-			return ordered[i].AdvertiserID < ordered[j].AdvertiserID
-		}
-		return left > right
-	})
-
-	winner := ordered[0]
+	winner := bids[bestIdx]
 	price := winner.Amount
 
 	if auctionType == "second-price" {
 		price = 0
-		if len(ordered) > 1 {
-			price = (ordered[1].Amount * ordered[1].PredictedCTR) / winner.PredictedCTR
+
+		if secondIdx != -1 {
+			price = secondScore / winner.PredictedCTR
 		}
 	}
 
-	return Result{winner.AdvertiserID, winner.Amount, winner.PredictedCTR, winner.Amount * winner.PredictedCTR, price, auctionType}, nil
+	return Result{
+		AdvertiserID: winner.AdvertiserID,
+		Bid:          winner.Amount,
+		PredictedCTR: winner.PredictedCTR,
+		EffectiveBid: bestScore,
+		Price:        price,
+		AuctionType:  auctionType,
+	}, nil
 }

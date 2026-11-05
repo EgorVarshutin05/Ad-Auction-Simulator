@@ -26,20 +26,58 @@ func TestCalculate(t *testing.T) {
 		})
 	}
 }
+
 func TestSingleBid(t *testing.T) {
 	r, err := Calculate([]Bid{{"A", 100, 0.5}}, "second-price")
 	if err != nil || r.Price != 0 {
 		t.Fatalf("result=%+v, err=%v", r, err)
 	}
 }
+
 func TestTieBreak(t *testing.T) {
-	r, err := Calculate([]Bid{{"B", 100, 0.1}, {"A", 200, 0.05}}, "first-price")
-	if err != nil || r.AdvertiserID != "A" {
-		t.Fatalf("result=%+v, err=%v", r, err)
+	tests := []struct {
+		name       string
+		bids       []Bid
+		wantWinner string
+		wantPrice  float64
+	}{
+		{"two tie", []Bid{{"B", 100, 0.1}, {"A", 200, 0.05}}, "A", 200},
+		{"three tie and lower bid", []Bid{{"C", 100, 0.1}, {"B", 100, 0.1}, {"A", 200, 0.05}, {"D", 1, 0.1}}, "A", 200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := Calculate(tt.bids, "second-price")
+			if err != nil || r.AdvertiserID != tt.wantWinner || math.Abs(r.Price-tt.wantPrice) > 1e-9 {
+				t.Fatalf("result=%+v, err=%v", r, err)
+			}
+		})
 	}
 }
+
+func TestOrderDoesNotMatter(t *testing.T) {
+	variants := [][]Bid{
+		{{"C", 200, 0.02}, {"B", 100, 0.1}, {"A", 150, 0.05}},
+		{{"B", 100, 0.1}, {"A", 150, 0.05}, {"C", 200, 0.02}},
+		{{"A", 150, 0.05}, {"C", 200, 0.02}, {"B", 100, 0.1}},
+	}
+	for _, bids := range variants {
+		r, err := Calculate(bids, "second-price")
+		if err != nil || r.AdvertiserID != "B" || math.Abs(r.Price-75) > 1e-9 {
+			t.Fatalf("result=%+v, err=%v", r, err)
+		}
+	}
+}
+
+func TestInputNotModified(t *testing.T) {
+	bids := []Bid{{"B", 100, 0.1}, {"A", 150, 0.05}}
+	_, err := Calculate(bids, "second-price")
+	if err != nil || bids[0].AdvertiserID != "B" || bids[1].AdvertiserID != "A" {
+		t.Fatalf("input was modified: %+v, err=%v", bids, err)
+	}
+}
+
 func TestInvalidBids(t *testing.T) {
-	for _, b := range []Bid{{"", 100, .1}, {"A", -1, .1}, {"A", 100, 1.1}, {"A", math.NaN(), .1}} {
+	for _, b := range []Bid{{"", 100, .1}, {"A", -1, .1}, {"A", 100, 1.1}, {"A", math.NaN(), .1}, {"A", math.Inf(1), .1}} {
 		if Validate(b) == nil {
 			t.Errorf("expected error for %+v", b)
 		}

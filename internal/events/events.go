@@ -26,8 +26,8 @@ func Consume(ctx context.Context, ch <-chan Event, store *storage.Store) {
 				if err := store.AddBidStats(ctx, event.Bid); err != nil {
 					log.Printf("stats update failed: %v", err)
 				}
-				if err := store.AddWinStats(ctx, event.WinnerID); err != nil {
-					log.Printf("wins update failed: %v", err)
+				if err := store.AddLeaderStats(ctx, event.WinnerID); err != nil {
+					log.Printf("leader stats update failed: %v", err)
 				}
 			}
 		}

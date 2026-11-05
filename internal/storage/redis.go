@@ -9,7 +9,9 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type Store struct{ Client *redis.Client }
+type Store struct {
+	Client *redis.Client
+}
 
 func New(address string) *Store {
 	return &Store{Client: redis.NewClient(&redis.Options{Addr: address})}
@@ -51,7 +53,7 @@ func (s *Store) AddBidStats(ctx context.Context, b auction.Bid) error {
 	return s.Client.HIncrBy(ctx, "auction:stats", "total_bids", 1).Err()
 }
 
-func (s *Store) AddWinStats(ctx context.Context, advertiserID string) error {
+func (s *Store) AddLeaderStats(ctx context.Context, advertiserID string) error {
 	return s.Client.HIncrBy(ctx, "auction:wins", advertiserID, 1).Err()
 }
 
@@ -64,5 +66,8 @@ func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"total_bids": total, "wins_by_advertiser": wins}, nil
+	return map[string]interface{}{
+		"total_bids":             total,
+		"time_leading_after_bid": wins,
+	}, nil
 }

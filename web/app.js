@@ -69,7 +69,7 @@ function renderWinner(data) {
 
 function renderStats(data) {
   $('total-bids').textContent = format(data.total_bids || 0);
-  const entries = Object.entries(data.wins_by_advertiser || {}).map(([id, count]) => [id, Number(count)]).sort((a,b) => b[1]-a[1]);
+  const entries = Object.entries(data.times_leading_after_bid || {}).map(([id, count]) => [id, Number(count)]).sort((a,b) => b[1]-a[1]);
   const root = $('wins'); root.replaceChildren();
   if (!entries.length) {root.className = 'empty compact'; root.textContent = 'Пока нет данных'; return;}
   root.className = '';
