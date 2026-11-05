@@ -12,6 +12,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -27,6 +28,8 @@ func env(key, fallback string) string {
 }
 
 func main() {
+	runtime.SetMutexProfileFraction(1)
+
 	kind := env("AUCTION_TYPE", "second-price")
 	if kind != "first-price" && kind != "second-price" {
 		log.Fatal("AUCTION_TYPE must be first-price or second-price")

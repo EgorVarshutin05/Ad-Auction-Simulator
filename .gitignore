@@ -2,3 +2,14 @@
 *.out
 *.test
 coverage.html
+
+# Go profiling
+*.prof
+*.pprof
+*.pb.gz
+*.mem
+*.cpu
+*.trace
+
+# Benchmark results
+*.bench

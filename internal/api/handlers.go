@@ -71,7 +71,7 @@ func (s *Server) Bid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bids, err := s.Store.GetBids(ctx)
+	bids, err := s.Store.GetTopBids(ctx)
 	if err != nil {
 		writeError(w, 503, "Redis unavailable")
 		return
@@ -105,10 +105,13 @@ func (s *Server) Winner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	bids, err := s.Store.GetBids(ctx)
+	bids, err := s.Store.GetTopBids(ctx)
 	if err != nil {
 		writeError(w, 503, "Redis unavailable")
 		return

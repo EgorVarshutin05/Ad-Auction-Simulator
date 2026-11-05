@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -22,7 +23,21 @@ func (s *Store) SaveBid(ctx context.Context, b auction.Bid) error {
 	if err != nil {
 		return err
 	}
-	return s.Client.HSet(ctx, "auction:bids", b.AdvertiserID, data).Err()
+
+	score := -(b.Amount * b.PredictedCTR)
+
+	_, err = s.Client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.HSet(ctx, "auction:bids", b.AdvertiserID, data)
+
+		pipe.ZAdd(ctx, "auction:scores", redis.Z{
+			Score:  score,
+			Member: b.AdvertiserID,
+		})
+
+		return nil
+	})
+
+	return err
 }
 
 func (s *Store) GetBids(ctx context.Context) ([]auction.Bid, error) {
@@ -67,7 +82,48 @@ func (s *Store) Stats(ctx context.Context) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"total_bids":             total,
-		"time_leading_after_bid": wins,
+		"total_bids":              total,
+		"times_leading_after_bid": wins,
 	}, nil
+}
+
+func (s *Store) GetTopBids(ctx context.Context) ([]auction.Bid, error) {
+	// Получаем ID двух лучших рекламодателей.
+	ids, err := s.Client.ZRange(ctx, "auction:scores", 0, 1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ids) == 0 {
+		return []auction.Bid{}, nil
+	}
+
+	// Получаем полные данные только этих участников.
+	values, err := s.Client.HMGet(ctx, "auction:bids", ids...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	bids := make([]auction.Bid, 0, len(values))
+
+	for i, value := range values {
+		if value == nil {
+			return nil, fmt.Errorf("bid not found: %s", ids[i])
+		}
+
+		data, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("unexpected bid type: %T", value)
+		}
+
+		var bid auction.Bid
+
+		if err := json.Unmarshal([]byte(data), &bid); err != nil {
+			return nil, err
+		}
+
+		bids = append(bids, bid)
+	}
+
+	return bids, nil
 }
