@@ -2,23 +2,18 @@ package api
 
 import (
 	"ad-auction/internal/auction"
-	"ad-auction/internal/events"
 	"ad-auction/internal/metrics"
-	"ad-auction/internal/storage"
+	"ad-auction/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 )
 
 type Server struct {
-	Store       *storage.Store
-	AuctionType string
-	Events      chan<- events.Event
-	mu          sync.Mutex
+	Service *service.Service
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -31,120 +26,122 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// bidRequest представляет JSON-запрос на размещение ставки
+type bidRequest struct {
+	auction.Bid
+	AuctionID string `json:"auction_id"`
+}
+
 func (s *Server) Bid(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
-		writeError(w, 405, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var b auction.Bid
+	var req bidRequest
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&b); err != nil {
-		writeError(w, 400, "invalid JSON: "+err.Error())
+
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
 
 	var extra interface{}
+
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeError(w, 400, "expected one JSON object")
+		writeError(w, http.StatusBadRequest, "expected one JSON object")
 		return
 	}
-
-	if err := auction.Validate(b); err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	if err := s.Store.SaveBid(ctx, b); err != nil {
-		writeError(w, 503, "Redis unavailable")
-		return
-	}
-
-	bids, err := s.Store.GetTopBids(ctx)
+	result, err := s.Service.PlaceBid(ctx, req.AuctionID, req.Bid)
 	if err != nil {
-		writeError(w, 503, "Redis unavailable")
+		switch {
+		case errors.Is(err, service.ErrInvalidBid),
+			errors.Is(err, service.ErrInvalidAuctionID):
+			writeError(w, http.StatusBadRequest, err.Error())
+
+		case errors.Is(err, service.ErrAuctionClosed),
+			errors.Is(err, service.ErrAuctionTypeMismatch):
+			writeError(w, http.StatusConflict, err.Error())
+
+		case errors.Is(err, service.ErrStorage),
+			errors.Is(err, service.ErrHistory):
+			writeError(w, http.StatusServiceUnavailable, "service unavailable")
+
+		default:
+			writeError(w, http.StatusInternalServerError, "auction calculation failed")
+		}
+
 		return
 	}
 
-	result, err := auction.Calculate(bids, s.AuctionType)
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-
-	if err := s.Store.SaveWinner(ctx, result); err != nil {
-		writeError(w, 503, "Redis unavailable")
-		return
-	}
-
-	select {
-	case s.Events <- events.Event{Type: "bid_placed", Bid: b, WinnerID: result.AdvertiserID}:
-	case <-ctx.Done():
-		writeError(w, 503, "event queue timeout")
-		return
-	}
-
-	metrics.BidAmount.Observe(b.Amount)
-	writeJSON(w, 201, result)
+	metrics.BidAmount.Observe(req.Bid.Amount)
+	writeJSON(w, http.StatusCreated, result)
 }
+
 func (s *Server) Winner(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		writeError(w, 405, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	bids, err := s.Store.GetTopBids(ctx)
+	auctionID := r.URL.Query().Get("auction_id")
+
+	result, err := s.Service.CurrentWinner(ctx, auctionID)
 	if err != nil {
-		writeError(w, 503, "Redis unavailable")
+		switch {
+		case errors.Is(err, service.ErrInvalidAuctionID):
+			writeError(w, http.StatusBadRequest, err.Error())
+
+		case errors.Is(err, service.ErrNoBids):
+			writeError(w, http.StatusNotFound, "no bids yet")
+
+		case errors.Is(err, service.ErrStorage):
+			writeError(w, http.StatusServiceUnavailable, "Redis unavailable")
+
+		default:
+			writeError(w, http.StatusInternalServerError, "auction calculation failed")
+		}
+
 		return
 	}
 
-	if len(bids) == 0 {
-		writeError(w, 404, "no bids yet")
-		return
-	}
-
-	result, err := auction.Calculate(bids, s.AuctionType)
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
-
-	writeJSON(w, 200, result)
+	writeJSON(w, http.StatusOK, result)
 }
+
 func (s *Server) Stats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		writeError(w, 405, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	data, err := s.Store.Stats(ctx)
+	auctionID := r.URL.Query().Get("auction_id")
+
+	data, err := s.Service.Stats(ctx, auctionID)
 	if err != nil {
-		writeError(w, 503, "Redis unavailable")
+		if errors.Is(err, service.ErrInvalidAuctionID) {
+			writeError(w, http.StatusBadRequest, err.Error())
+		} else {
+			writeError(w, http.StatusServiceUnavailable, "Redis unavailable")
+		}
 		return
 	}
 
-	writeJSON(w, 200, data)
+	writeJSON(w, http.StatusOK, data)
 }

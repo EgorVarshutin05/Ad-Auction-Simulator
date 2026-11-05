@@ -2,8 +2,8 @@ package main
 
 import (
 	"ad-auction/internal/api"
-	"ad-auction/internal/events"
 	"ad-auction/internal/metrics"
+	"ad-auction/internal/service"
 	"ad-auction/internal/storage"
 	"ad-auction/web"
 	"context"
@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +27,28 @@ func env(key, fallback string) string {
 }
 
 func main() {
+
+	// Подключаем PostgreSQL.
+	databaseURL := env(
+		"DATABASE_URL",
+		"postgres://auction:auction_dev_password@localhost:5433/auction_db?sslmode=disable",
+	)
+
+	pgCtx, pgCancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer pgCancel()
+
+	postgresStore, err := storage.NewPostgres(pgCtx, databaseURL)
+	if err != nil {
+		log.Fatalf("PostgreSQL connection: %v", err)
+	}
+	defer postgresStore.Close()
+
+	log.Println("PostgreSQL connected successfully")
+
+	// -----
 	runtime.SetMutexProfileFraction(1)
 
 	kind := env("AUCTION_TYPE", "second-price")
@@ -44,20 +65,15 @@ func main() {
 	}
 	cancel()
 
-	eventsCh := make(chan events.Event, 100)
-
-	var consumerWG sync.WaitGroup
-
-	consumerWG.Add(1)
-	go func() {
-		defer consumerWG.Done()
-		events.Consume(context.Background(), eventsCh, store)
-	}()
+	auctionService := &service.Service{
+		Store:       store,
+		History:     postgresStore,
+		AuctionType: kind,
+		StatsStore:  postgresStore,
+	}
 
 	handler := &api.Server{
-		Store:       store,
-		AuctionType: kind,
-		Events:      eventsCh,
+		Service: auctionService,
 	}
 
 	mux := http.NewServeMux()
@@ -111,8 +127,4 @@ func main() {
 
 	_ = server.Shutdown(shutdownCtx)
 	_ = debugServer.Shutdown(shutdownCtx)
-
-	close(eventsCh)
-
-	consumerWG.Wait()
 }
