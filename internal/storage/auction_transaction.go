@@ -18,7 +18,9 @@ func (p *Postgres) PlaceBidTransaction(ctx context.Context, auctionID string, au
 	if err != nil {
 		return auction.Result{}, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	// Создаем аукцион, если его еще нет
 	_, err = tx.Exec(ctx, `

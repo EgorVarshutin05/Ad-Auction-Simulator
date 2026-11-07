@@ -92,7 +92,9 @@ func (p *Postgres) SaveHistory(ctx context.Context, auctionID string, auctionTyp
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	// Создаём аукцион, если он ещё не существует.
 	_, err = tx.Exec(ctx, `

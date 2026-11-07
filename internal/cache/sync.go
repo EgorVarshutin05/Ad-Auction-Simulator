@@ -30,7 +30,9 @@ func (s *Sync) latestSnapshot(ctx context.Context, id string) ([]auction.Bid, au
 		return nil, auction.Result{}, 0,
 			fmt.Errorf("begin snapshot: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	// Последняя ставка каждого рекламодателя.
 	rows, err := tx.Query(ctx, `

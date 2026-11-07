@@ -83,7 +83,7 @@ func (s *Server) Bid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metrics.BidAmount.Observe(req.Bid.Amount)
+	metrics.BidAmount.Observe(req.Amount)
 	writeJSON(w, http.StatusCreated, result)
 }
 

@@ -48,7 +48,11 @@ func main() {
 
 	// Consumer отвечает за Kafka.
 	c := consumer.NewConsumer(broker, handler)
-	defer c.Close()
+	defer func() {
+		if err := c.Close(); err != nil {
+			log.Printf("close Kafka consumer: %v", err)
+		}
+	}()
 
 	// Запускаем обработку сообщений.
 	if err := c.Run(ctx); err != nil &&

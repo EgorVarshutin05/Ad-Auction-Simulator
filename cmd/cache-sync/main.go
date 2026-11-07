@@ -40,7 +40,11 @@ func main() {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: env("REDIS_ADDR", "localhost:6379"),
 	})
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Printf("close Redis client: %v", err)
+		}
+	}()
 
 	syncer := cache.Sync{
 		DB:    pg.Pool,

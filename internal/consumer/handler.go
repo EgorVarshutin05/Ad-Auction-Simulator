@@ -30,10 +30,7 @@ type Handler struct {
 
 // Handle возвращает true, если событие обработано впервые.
 // Если событие уже было обработано, возвращает false, nil.
-func (h *Handler) Handle(
-	ctx context.Context,
-	data []byte,
-) (bool, error) {
+func (h *Handler) Handle(ctx context.Context, data []byte) (bool, error) {
 	var event Event
 
 	if err := json.Unmarshal(data, &event); err != nil {
@@ -66,7 +63,9 @@ func (h *Handler) Handle(
 	if err != nil {
 		return false, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	// Регистрируем event_id.
 	// Если он уже существует, повторно ничего не считаем.

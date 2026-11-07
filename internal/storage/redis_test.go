@@ -40,18 +40,18 @@ func setupTestRedis(t *testing.T) *Store {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		t.Fatalf("Redis недоступен: %v", err)
 	}
 
 	// Не трогаем базу, если тестовые ключи уже существуют
 	count, err := client.Exists(ctx, testKeys...).Result()
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		t.Fatalf("Ошибка проверки Redis: %v", err)
 	}
 	if count != 0 {
-		client.Close()
+		_ = client.Close()
 		t.Fatal("DB 15 содержит ключи аукциона; тесты не запущены")
 	}
 
