@@ -108,8 +108,9 @@ func (s *Server) Winner(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrNoBids):
 			writeError(w, http.StatusNotFound, "no bids yet")
 
-		case errors.Is(err, service.ErrStorage):
-			writeError(w, http.StatusServiceUnavailable, "Redis unavailable")
+		case errors.Is(err, service.ErrStorage),
+			errors.Is(err, service.ErrHistory):
+			writeError(w, http.StatusServiceUnavailable, "service unavailable")
 
 		default:
 			writeError(w, http.StatusInternalServerError, "auction calculation failed")

@@ -98,6 +98,14 @@ jobs:
             ./internal/storage \
             -run TestPostgres \
             -v -count=1
+      
+
+      - name: Run Redis cache synchronization integration tests
+        run: |
+          go test -tags=integration \
+            ./internal/cache \
+            -v -count=1
+
 
   docker:
     name: Docker image build

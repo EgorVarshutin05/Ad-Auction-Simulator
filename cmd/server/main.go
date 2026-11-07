@@ -27,20 +27,13 @@ func env(key, fallback string) string {
 }
 
 func main() {
+	databaseURL := env("DATABASE_URL", "postgres://auction:auction_dev_password@localhost:5433/auction_db?sslmode=disable")
 
-	// Подключаем PostgreSQL.
-	databaseURL := env(
-		"DATABASE_URL",
-		"postgres://auction:auction_dev_password@localhost:5433/auction_db?sslmode=disable",
-	)
-
-	pgCtx, pgCancel := context.WithTimeout(
-		context.Background(),
-		5*time.Second,
-	)
-	defer pgCancel()
+	pgCtx, pgCancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	postgresStore, err := storage.NewPostgres(pgCtx, databaseURL)
+	pgCancel()
+
 	if err != nil {
 		log.Fatalf("PostgreSQL connection: %v", err)
 	}
@@ -48,7 +41,6 @@ func main() {
 
 	log.Println("PostgreSQL connected successfully")
 
-	// -----
 	runtime.SetMutexProfileFraction(1)
 
 	kind := env("AUCTION_TYPE", "second-price")
@@ -56,27 +48,16 @@ func main() {
 		log.Fatal("AUCTION_TYPE must be first-price or second-price")
 	}
 
-	store := storage.New(env("REDIS_ADDR", "localhost:6379"))
-	defer store.Client.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	if err := store.Client.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Redis connection: %v", err)
-	}
-	cancel()
-
 	auctionService := &service.Service{
-		Store:       store,
 		History:     postgresStore,
-		AuctionType: kind,
 		StatsStore:  postgresStore,
+		AuctionType: kind,
 	}
 
-	handler := &api.Server{
-		Service: auctionService,
-	}
+	handler := &api.Server{Service: auctionService}
 
 	mux := http.NewServeMux()
+
 	page, err := web.Handler()
 	if err != nil {
 		log.Fatalf("build web page: %v", err)
@@ -84,18 +65,18 @@ func main() {
 
 	mux.Handle("/", page)
 
-	mux.Handle("/static/",
-		http.StripPrefix("/static/",
-			http.FileServer(http.FS(web.Files)),
-		),
-	)
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.Files))))
 
 	mux.HandleFunc("/bid", handler.Bid)
 	mux.HandleFunc("/winner", handler.Winner)
 	mux.HandleFunc("/stats", handler.Stats)
 	mux.Handle("/metrics", promhttp.Handler())
 
-	server := &http.Server{Addr: ":8080", Handler: metrics.Middleware(mux), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           metrics.Middleware(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	debugMux := http.NewServeMux()
 	debugMux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -103,27 +84,36 @@ func main() {
 	debugMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	debugMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	debugMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	debugServer := &http.Server{Addr: "127.0.0.1:6060", Handler: debugMux, ReadHeaderTimeout: 5 * time.Second}
+
+	debugServer := &http.Server{
+		Addr:              "127.0.0.1:6060",
+		Handler:           debugMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	go func() {
-		if err := debugServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := debugServer.ListenAndServe(); err != nil &&
+			err != http.ErrServerClosed {
 			log.Printf("pprof: %v", err)
 		}
 	}()
 
 	go func() {
 		log.Printf("auction server :8080 (%s)", kind)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+
+		if err := server.ListenAndServe(); err != nil &&
+			err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
 	<-signals
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	_ = server.Shutdown(shutdownCtx)
 	_ = debugServer.Shutdown(shutdownCtx)

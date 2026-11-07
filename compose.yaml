@@ -75,14 +75,11 @@ services:
     image: ad-auction-app:local
     command: ["/app/bin/server"]
     environment:
-      REDIS_ADDR: redis:6379
       DATABASE_URL: "postgres://auction:auction_dev_password@postgres:5432/auction_db?sslmode=disable"
       AUCTION_TYPE: second-price
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
       migrate:
@@ -101,6 +98,23 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  cache-sync:
+    image: ad-auction-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/bin/cache-sync"]
+    environment:
+      DATABASE_URL: "postgres://auction:auction_dev_password@postgres:5432/auction_db?sslmode=disable"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   outbox-publisher:
     image: ad-auction-app:local
@@ -122,7 +136,6 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-
   consumer:
     image: ad-auction-app:local
     build:
@@ -143,7 +156,6 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  
   kafka-init:
     image: apache/kafka:4.1.2
     entrypoint: ["/opt/kafka/bin/kafka-topics.sh"]
@@ -162,7 +174,6 @@ services:
       kafka:
         condition: service_healthy
     restart: "no"
-  
 
   migrate:
     image: migrate/migrate:v4.19.1
@@ -177,8 +188,6 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
-
-
 
 volumes:
   redis_data:
